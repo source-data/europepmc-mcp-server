@@ -602,31 +602,77 @@ class EuropePMCServer:
                                     "type": "string",
                                     "description": "Advanced search query with field codes"
                                 },
-                                "filters": {
+                        "filters": {
+                            "type": "object",
+                            "properties": {
+                                "publication_date_from": {
+                                    "type": "string",
+                                    "description": "Start date (YYYY-MM-DD format)"
+                                },
+                                "publication_date_to": {
+                                    "type": "string",
+                                    "description": "End date (YYYY-MM-DD format)"
+                                },
+                                "journal": {
+                                    "type": "string",
+                                    "description": "Journal name filter"
+                                },
+                                "open_access_only": {
+                                    "type": "boolean",
+                                    "description": "Limit to open access publications"
+                                },
+                                "has_full_text": {
+                                    "type": "boolean",
+                                    "description": "Limit to publications with full text available"
+                                },
+                                "publication_types": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string",
+                                        "enum": ["research_article", "review", "preprint", "case_report", "editorial", "letter", "comment", "correction", "retraction"]
+                                    },
+                                    "description": "Filter by publication types (excludes corrections, retractions, etc. by default)"
+                                },
+                                "exclude_types": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string",
+                                        "enum": ["correction", "corrigendum", "erratum", "retraction", "editorial", "letter", "comment"]
+                                    },
+                                    "description": "Exclude specific publication types (e.g., corrections, editorials)"
+                                },
+                                "source": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string",
+                                        "enum": ["MED", "PMC", "PPR", "PAT", "ETH", "HIR", "CTX", "AGR", "CBA", "NBK"]
+                                    },
+                                    "description": "Filter by data source (MED=PubMed, PMC=PMC, PPR=Preprints, etc.)"
+                                },
+                                "article_sections": {
                                     "type": "object",
                                     "properties": {
-                                        "publication_date_from": {
-                                            "type": "string",
-                                            "description": "Start date (YYYY-MM-DD format)"
+                                        "include_sections": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string",
+                                                "enum": ["TITLE", "ABSTRACT", "INTRO", "METHODS", "RESULTS", "DISCUSS", "CONCL", "ACK_FUND", "REF", "FIG", "TABLE", "SUPPL"]
+                                            },
+                                            "description": "Search only in specified article sections"
                                         },
-                                        "publication_date_to": {
-                                            "type": "string",
-                                            "description": "End date (YYYY-MM-DD format)"
-                                        },
-                                        "journal": {
-                                            "type": "string",
-                                            "description": "Journal name filter"
-                                        },
-                                        "open_access_only": {
-                                            "type": "boolean",
-                                            "description": "Limit to open access publications"
-                                        },
-                                        "has_full_text": {
-                                            "type": "boolean",
-                                            "description": "Limit to publications with full text available"
+                                        "exclude_sections": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string",
+                                                "enum": ["TITLE", "ABSTRACT", "INTRO", "METHODS", "RESULTS", "DISCUSS", "CONCL", "ACK_FUND", "REF", "FIG", "TABLE", "SUPPL"]
+                                            },
+                                            "description": "Exclude specified article sections from search"
                                         }
-                                    }
-                                },
+                                    },
+                                    "description": "Filter by article sections (TITLE, ABSTRACT, INTRO, METHODS, RESULTS, DISCUSS, etc.)"
+                                }
+                            }
+                        },
                                 "result_type": {
                                     "type": "string",
                                     "enum": ["idlist", "lite", "core"],
@@ -947,11 +993,12 @@ class EuropePMCServer:
             # Build advanced query with filters
             query_parts = [query]
             
-            # Add date filters
-            if filters.get("publication_date_from"):
+            # Add date filters using FIRST_PDATE (first publication date)
+            if filters.get("publication_date_from") and filters.get("publication_date_to"):
+                query_parts.append(f'FIRST_PDATE:[{filters["publication_date_from"]} TO {filters["publication_date_to"]}]')
+            elif filters.get("publication_date_from"):
                 query_parts.append(f'FIRST_PDATE:[{filters["publication_date_from"]} TO *]')
-            
-            if filters.get("publication_date_to"):
+            elif filters.get("publication_date_to"):
                 query_parts.append(f'FIRST_PDATE:[* TO {filters["publication_date_to"]}]')
             
             # Add journal filter
@@ -965,6 +1012,103 @@ class EuropePMCServer:
             # Add full text filter
             if filters.get("has_full_text"):
                 query_parts.append("HAS_FT:Y")
+            
+            # Add source filters
+            if filters.get("source"):
+                sources = filters["source"]
+                if isinstance(sources, list) and sources:
+                    if len(sources) == 1:
+                        query_parts.append(f'SRC:{sources[0]}')
+                    else:
+                        source_query = " OR ".join([f'SRC:{src}' for src in sources])
+                        query_parts.append(f'({source_query})')
+            
+            # Add publication type exclusions (default: exclude corrections, retractions, etc.)
+            exclude_types = filters.get("exclude_types", ["correction", "corrigendum", "erratum", "retraction"])
+            if exclude_types:
+                # Build exclusion query for common correction/retraction terms
+                exclusion_terms = []
+                for exc_type in exclude_types:
+                    if exc_type in ["correction", "corrigendum", "erratum"]:
+                        exclusion_terms.extend([
+                            f'NOT TITLE:"{exc_type}"',
+                            f'NOT TITLE:"corrigendum"',
+                            f'NOT TITLE:"erratum"',
+                            f'NOT TITLE:"correction"'
+                        ])
+                    elif exc_type == "retraction":
+                        exclusion_terms.extend([
+                            f'NOT TITLE:"retraction"',
+                            f'NOT TITLE:"retracted"'
+                        ])
+                    elif exc_type == "editorial":
+                        exclusion_terms.append(f'NOT TITLE:"editorial"')
+                    elif exc_type == "letter":
+                        exclusion_terms.extend([
+                            f'NOT TITLE:"letter to"',
+                            f'NOT TITLE:"letter"'
+                        ])
+                    elif exc_type == "comment":
+                        exclusion_terms.append(f'NOT TITLE:"comment"')
+                
+                # Remove duplicates and add to query
+                unique_exclusions = list(set(exclusion_terms))
+                query_parts.extend(unique_exclusions[:5])  # Limit to avoid overly complex queries
+            
+            # Add specific publication type filters
+            if filters.get("publication_types"):
+                pub_types = filters["publication_types"]
+                if isinstance(pub_types, list) and pub_types:
+                    # Map publication types to search terms
+                    type_mapping = {
+                        "research_article": "research",
+                        "review": "review",
+                        "preprint": "SRC:PPR",  # Preprints source
+                        "case_report": "case report",
+                        "editorial": "editorial",
+                        "letter": "letter",
+                        "comment": "comment"
+                    }
+                    
+                    type_queries = []
+                    for pub_type in pub_types:
+                        if pub_type in type_mapping:
+                            mapped_term = type_mapping[pub_type]
+                            if mapped_term.startswith("SRC:"):
+                                type_queries.append(mapped_term)
+                            else:
+                                type_queries.append(f'TITLE:"{mapped_term}"')
+                    
+                    if type_queries:
+                        if len(type_queries) == 1:
+                            query_parts.append(type_queries[0])
+                        else:
+                            type_query = " OR ".join(type_queries)
+                            query_parts.append(f'({type_query})')
+            
+            # Add article section filters
+            if filters.get("article_sections"):
+                sections = filters["article_sections"]
+                
+                # Include specific sections
+                if sections.get("include_sections"):
+                    include_sections = sections["include_sections"]
+                    if isinstance(include_sections, list) and include_sections:
+                        # Build section-specific search
+                        section_queries = []
+                        for section in include_sections:
+                            section_queries.append(f'{section}:"{query}"')
+                        
+                        if section_queries:
+                            # Replace the main query with section-specific searches
+                            query_parts[0] = f'({" OR ".join(section_queries)})'
+                
+                # Exclude specific sections
+                if sections.get("exclude_sections"):
+                    exclude_sections = sections["exclude_sections"]
+                    if isinstance(exclude_sections, list) and exclude_sections:
+                        for section in exclude_sections:
+                            query_parts.append(f'NOT {section}:"{query}"')
             
             final_query = " AND ".join(query_parts)
             

@@ -5,11 +5,13 @@ A Model Context Protocol (MCP) server that provides comprehensive access to the 
 ## Features
 
 - **Comprehensive Search**: Search publications using the full EuropePMC query syntax
+- **Enhanced Filtering**: Advanced publication type filtering (exclude corrections, retractions, etc.)
+- **Time Filtering**: Precise date range filtering using FIRST_PDATE
+- **Source Filtering**: Filter by data sources (PubMed, PMC, Preprints, etc.)
 - **Author Disambiguation**: Advanced fuzzy matching algorithms to identify publications by specific authors
 - **Citation Analysis**: Retrieve citations and references for publications
 - **Full-Text Access**: Access full-text XML for open access publications
 - **Database Cross-References**: Get links to related databases and resources
-- **Advanced Filtering**: Filter by publication date, journal, open access status, and more
 - **Rate Limiting**: Built-in rate limiting to respect API guidelines
 - **Error Handling**: Robust error handling with retry mechanisms
 
@@ -162,6 +164,40 @@ The server implements conservative rate limiting:
 - Automatic retry for transient failures
 - Detailed error messages for debugging
 - Graceful handling of API response variations
+
+## Examples and Testing
+
+### Quick Start Example
+
+Run the advanced search example to see the enhanced filtering capabilities:
+
+```bash
+python examples/advanced_search_example.py
+```
+
+This demonstrates:
+- Publication type filtering (exclude corrections, retractions)
+- Enhanced time filtering with FIRST_PDATE
+- Source filtering (MED, PMC, PPR, etc.)
+- Open access and full text filtering
+- Combined filtering for precise results
+
+### CLI Testing Tool
+
+Use the interactive CLI tool to test all server functions:
+
+```bash
+# List available tools
+python examples/test_mcp_cli.py list_tools
+
+# Advanced search with filtering
+python examples/test_mcp_cli.py advanced_search "stem cells" --date_from "2023-01-01" --open_access_only
+
+# Author search with disambiguation
+python examples/test_mcp_cli.py search_author_publications "Smith J" --additional_terms "cancer" --threshold 70
+```
+
+See `examples/README.md` for more detailed examples and usage instructions.
 
 ## Development
 
